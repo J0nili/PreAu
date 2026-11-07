@@ -7,7 +7,7 @@ Funciona sin servidor propio: solo HTML, CSS y JavaScript, con los datos guardad
 
 1. Crea un repositorio nuevo en GitHub (público, o privado si tu plan permite Pages).
 2. Sube **todos** los archivos de esta carpeta a la raíz del repositorio:
-   `index.html`, `manifest.webmanifest`, `sw.js`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png` y `.nojekyll`.
+   `index.html`, `manifest.webmanifest`, `sw.js`, `icon.svg`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png` y `.nojekyll`.
 3. En el repositorio ve a **Settings → Pages**.
 4. En *Build and deployment* elige **Deploy from a branch**, rama **main** y carpeta **/ (root)**, y pulsa *Save*.
 5. Espera uno o dos minutos. La app quedará en `https://TU-USUARIO.github.io/NOMBRE-DEL-REPOSITORIO/`.

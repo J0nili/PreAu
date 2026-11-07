@@ -11,6 +11,7 @@
 <meta name="format-detection" content="telephone=no">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="icon" type="image/png" href="icon-192.png">
 <title>Control presentes y ausentes</title>
 <style>
@@ -38,7 +39,10 @@ button:disabled{opacity:.45;cursor:default}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:8px}
 .legend i{display:inline-block;width:14px;height:14px;border-radius:3px;vertical-align:-3px;margin-right:4px;border:1px solid var(--line)}
 .wrap{overflow:auto;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:140px;border:1px solid var(--line);border-radius:6px}
-body>.wrap{flex:1 1 auto}
+body>.wrap{flex:1 1 auto;position:relative}
+#handle{position:absolute;width:20px;height:20px;margin:-10px 0 0 -10px;border-radius:50%;background:var(--focus);border:3px solid var(--bg);z-index:5;touch-action:none}
+#handle::before{content:'';position:absolute;inset:-14px}
+#handle[hidden]{display:none}
 table{border-collapse:separate;border-spacing:0;table-layout:fixed;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 th,td{padding:5px 10px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);white-space:nowrap;position:relative;height:30px;overflow:hidden}
 td.cell{text-overflow:ellipsis}
@@ -88,7 +92,6 @@ summary{cursor:pointer;color:var(--muted);font-size:13px;padding:2px 0}
  <div class="stats"><span id="s1"></span><span id="s2"></span><span id="s3"></span></div></div>
 <div class="bar" id="bar">
  <button data-a="undo">↶ Deshacer</button>
- <button data-a="range" id="bRange">Modo rango</button>
  <span class="legend" style="margin:0 0 0 6px">
   <span><b style="color:var(--cdif)">123</b> Diferencia ≠ Citados</span>
   <span><b style="color:var(--ctot)">123</b> Total ≠ Citados</span>
@@ -113,13 +116,13 @@ summary{cursor:pointer;color:var(--muted);font-size:13px;padding:2px 0}
 </div>
 <div class="hint">
  <b>Menú:</b> clic derecho sobre una celda, fila o columna (en pantalla táctil, mantén presionado) para insertar o eliminar filas y columnas, renombrar, copiar, cortar y pegar.<br>
- <b>Seleccionar:</b> clic o arrastrar; <kbd>Shift</kbd>+clic para rangos; clic en el número de fila o en el título de columna para seleccionarla completa. En táctil, activa «Modo rango» y toca la celda final.<br>
- <b>Editar:</b> doble clic, <kbd>F2</kbd>, <kbd>Enter</kbd> o escribir (en táctil, toca otra vez la celda seleccionada) · <kbd>Supr</kbd> vacía · <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>X</kbd>/<kbd>V</kbd> copian, cortan y pegan (también desde Excel; el pegado agrega filas y columnas si hacen falta) · <kbd>Ctrl</kbd>+<kbd>Z</kbd> deshace.<br>
+ <b>Seleccionar:</b> clic o arrastrar; <kbd>Shift</kbd>+clic para rangos; clic en el número de fila o en el título de columna para seleccionarla completa. En pantallas táctiles, arrastra el punto azul de la celda seleccionada para extender la selección.<br>
+ <b>Editar:</b> con celdas seleccionadas, escribe para sobrescribir y <kbd>Supr</kbd> o <kbd>Retroceso</kbd> para borrar (en táctil: menú → «Borrar contenido»). Doble clic, <kbd>F2</kbd>, <kbd>Enter</kbd> o escribir (en táctil, toca otra vez la celda seleccionada) · <kbd>Supr</kbd> vacía · <kbd>Ctrl</kbd>+<kbd>C</kbd>/<kbd>X</kbd>/<kbd>V</kbd> copian, cortan y pegan (también desde Excel; el pegado agrega filas y columnas si hacen falta) · <kbd>Ctrl</kbd>+<kbd>Z</kbd> deshace.<br>
  <b>Tamaño:</b> la tabla se ajusta sola a la pantalla. Arrastra el borde derecho de un título de columna o el borde inferior de un número de fila para cambiar el tamaño.<br>
  Total (Ausentes + Presentes) y Diferencia (Citados − Ausentes) son fórmulas y no se editan.
 </div>
 </div></details>
-<div class="wrap"><table id="tbl"></table></div>
+<div class="wrap"><table id="tbl"></table><div id="handle" hidden></div></div>
 <div id="ctx" class="ctx" role="menu" hidden>
  <button data-a="rowUp">+ Fila arriba</button>
  <button data-a="rowDown">+ Fila abajo</button>
@@ -130,6 +133,7 @@ summary{cursor:pointer;color:var(--muted);font-size:13px;padding:2px 0}
  <button data-a="colDel">Eliminar columna(s)</button>
  <button data-a="rename">Renombrar columna</button>
  <hr>
+ <button data-a="clear">Borrar contenido</button>
  <button data-a="copy">Copiar</button>
  <button data-a="cut">Cortar</button>
  <button data-a="paste">Pegar</button>
@@ -160,8 +164,9 @@ function save(){
 }
 
 const undoStack=[];
-let sel={ar:0,ac:0,fr:0,fc:0},editing=null,drag=null,clip='',rs=null,rangeMode=false,touchT=0,curPx=[],flags=[];
-const tbl=$('tbl'),ctx=$('ctx');
+let sel={ar:0,ac:0,fr:0,fc:0},editing=null,drag=null,clip='',rs=null,touchT=0,curPx=[],flags=[];
+const tbl=$('tbl'),ctx=$('ctx'),handle=$('handle'),wrapEl=document.querySelector('.wrap');
+let touchSeen=false,hd=false;
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const num=v=>{const n=parseFloat(String(v??'').replace(',','.'));return isNaN(n)?0:n};
 const isNum=v=>v!==''&&v!=null&&!isNaN(parseFloat(String(v).replace(',','.')))&&isFinite(String(v).replace(',','.'));
@@ -223,17 +228,46 @@ function updateSel(){
   td.classList.toggle('act',r===clamp(sel.ar,S.rows.length)&&c===clamp(sel.ac,S.cols.length))});
  tbl.querySelectorAll('th.ch').forEach(th=>{const c=+th.dataset.c;th.classList.toggle('hsel',c>=g.c1&&c<=g.c2)});
  tbl.querySelectorAll('th.rh[data-r]').forEach(th=>{const r=+th.dataset.r;th.classList.toggle('hsel',r>=g.r1&&r<=g.r2)});
+ placeHandle();
 }
+function placeHandle(){
+ const coarse=window.matchMedia&&matchMedia('(pointer:coarse)').matches;
+ if(!(touchSeen||coarse)||editing||!S.rows.length||!S.cols.length){handle.hidden=true;return}
+ const g=rg(),td=cellEl(g.r2,g.c2);
+ if(!td){handle.hidden=true;return}
+ const tr=td.getBoundingClientRect(),wr=wrapEl.getBoundingClientRect();
+ if(tr.right<wr.left||tr.left>wr.right||tr.bottom<wr.top+34||tr.top>wr.bottom){handle.hidden=true;return}
+ handle.style.left=(tr.right-wr.left+wrapEl.scrollLeft-wrapEl.clientLeft)+'px';
+ handle.style.top=(tr.bottom-wr.top+wrapEl.scrollTop-wrapEl.clientTop)+'px';
+ handle.hidden=false;
+}
+handle.addEventListener('pointerdown',e=>{
+ e.preventDefault();e.stopPropagation();commit();
+ const g=rg();sel={ar:g.r1,ac:g.c1,fr:g.r2,fc:g.c2};hd=true;
+ try{handle.setPointerCapture(e.pointerId)}catch(err){}
+});
+handle.addEventListener('pointermove',e=>{
+ if(!hd)return;
+ const wr=wrapEl.getBoundingClientRect();
+ if(e.clientY>wr.bottom-36)wrapEl.scrollTop+=14;else if(e.clientY<wr.top+60)wrapEl.scrollTop-=14;
+ if(e.clientX>wr.right-36)wrapEl.scrollLeft+=14;else if(e.clientX<wr.left+60)wrapEl.scrollLeft-=14;
+ const td=document.elementsFromPoint(e.clientX,e.clientY).find(el=>el.matches&&el.matches('td.cell'));
+ if(td){sel.fr=+td.dataset.r;sel.fc=+td.dataset.c;updateSel()}
+});
+const endHandle=()=>{hd=false};
+handle.addEventListener('pointerup',endHandle);handle.addEventListener('pointercancel',endHandle);
+wrapEl.addEventListener('scroll',placeHandle,{passive:true});
+document.addEventListener('touchstart',()=>{touchSeen=true},{passive:true,once:true});
 const cellEl=(r,c)=>tbl.querySelector(`td.cell[data-r="${r}"][data-c="${c}"]`);
 
 /* ---------- edición ---------- */
-function startEdit(r,c,init){
+function startEdit(r,c,init,all){
  if(r>=0&&(!S.cols[c]||S.cols[c].f||!S.rows[r]))return;
  commit();
  const el=r<0?tbl.querySelector(`th.ch[data-c="${c}"]`):cellEl(r,c);if(!el)return;
  const raw=r<0?S.cols[c].n:(S.rows[r][S.cols[c].k]??'');
  el.innerHTML='<input>';const inp=el.firstChild;inp.value=init!==undefined?init:raw;
- editing={r,c,inp};inp.focus();inp.setSelectionRange(inp.value.length,inp.value.length);
+ editing={r,c,inp};inp.focus();if(all)inp.select();else inp.setSelectionRange(inp.value.length,inp.value.length);
  inp.addEventListener('blur',commit);
 }
 function commit(){
@@ -250,9 +284,10 @@ tbl.addEventListener('mousedown',e=>{
  const td=e.target.closest('td.cell'),rh=e.target.closest('th.rh[data-r]'),ch=e.target.closest('th.ch');
  if(!td&&!rh&&!ch)return;
  e.preventDefault();commit();closeCtx();
- const ext=e.shiftKey||rangeMode,lastC=S.cols.length-1,lastR=S.rows.length-1;
+ if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();
+ const ext=e.shiftKey,lastC=S.cols.length-1,lastR=S.rows.length-1;
  if(td){const r=+td.dataset.r,c=+td.dataset.c,g=rg();
-  if(!ext&&Date.now()-touchT<1000&&g.r1===g.r2&&g.c1===g.c2&&g.r1===r&&g.c1===c){startEdit(r,c);return}
+  if(!ext&&Date.now()-touchT<1000&&g.r1===g.r2&&g.c1===g.c2&&g.r1===r&&g.c1===c){startEdit(r,c,undefined,true);return}
   if(ext){sel.fr=r;sel.fc=c}else sel={ar:r,ac:c,fr:r,fc:c};drag='cell'}
  else if(rh){const r=+rh.dataset.r;
   if(ext){sel.fr=r;sel.ac=0;sel.fc=lastC}else sel={ar:r,ac:0,fr:r,fc:lastC};drag='row'}
@@ -483,13 +518,13 @@ const actions={
  colRight(){const g=rg(),n=g.c2-g.c1+1;snap();S.cols.splice(g.c2+1,0,...Array.from({length:n},newCol));sel={ar:sel.ar,ac:g.c2+1,fr:sel.ar,fc:g.c2+1};render()},
  colDel(){if(!S.cols.length)return;const g=rg();snap();S.cols.splice(g.c1,g.c2-g.c1+1);sel={ar:sel.ar,ac:g.c1,fr:sel.ar,fc:g.c1};render()},
  rename(){if(S.cols.length)startEdit(-1,rg().c1)},
+ clear:clearRange,
  copy:doCopy,
  cut(){doCopy();clearRange()},
  paste(){
   const fb=()=>doPaste(clip);
   try{navigator.clipboard.readText().then(t=>doPaste(t||clip)).catch(fb)}catch(e){fb()}},
  undo,csv:downloadCSV,
- range(){rangeMode=!rangeMode;$('bRange').classList.toggle('on',rangeMode)},
  blank(){snap();S=mkBlank();sel={ar:0,ac:0,fr:0,fc:0};render()},
  example(){snap();S=mkExample();sel={ar:0,ac:0,fr:0,fc:0};render()},
  import(){$('file').click()},
